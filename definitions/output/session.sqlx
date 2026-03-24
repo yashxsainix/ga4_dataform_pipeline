@@ -1,0 +1,70 @@
+/**
+ * Copyright 2024 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+config {
+    type: "table",
+    schema: constants.OUTPUT_DATASET,
+    description: "Sessions model, outputs one row per user session.",
+    bigquery: {
+        partitionBy: "session_start_date",
+        clusterBy: ["user_key", "ga_session_key"]
+    }
+}
+
+with int_session as (
+    select
+    a.user_key,
+    a.ga_session_key,
+    a.ga_session_id,
+    a.user_pseudo_id,
+    a.session_engaged,
+    a.engagement_time_msec,
+    a.user_first_touch_timestamp,
+    (
+      select
+        as struct
+        a.session_traffic_source_last_click.cross_channel_campaign_id as cross_channel_campaign_id,
+        a.session_traffic_source_last_click.cross_channel_campaign_name as cross_channel_campaign_name,
+        a.session_traffic_source_last_click.cross_channel_default_channel_group as cross_channel_default_channel_group, 
+        a.session_traffic_source_last_click.cross_channel_primary_channel_group as cross_channel_primary_channel_group,
+        a.session_traffic_source_last_click.cross_channel_source as cross_channel_source,
+        a.session_traffic_source_last_click.cross_channel_medium as cross_channel_medium
+    ) as session_traffic_source_last_click
+  from ${ref('int_event')} a
+)
+, final as (
+  select
+    a.user_key,
+    a.ga_session_key,
+    a.ga_session_id,
+    a.user_pseudo_id,
+    a.session_traffic_source_last_click,
+    min(datetime(timestamp_seconds(a.ga_session_id), '${constants.REPORTING_TIME_ZONE}')) as session_start_datetime,
+    date(min(datetime(timestamp_seconds(a.ga_session_id), '${constants.REPORTING_TIME_ZONE}'))) as session_start_date,
+    max(a.session_engaged) as session_engaged,
+    round(sum(a.engagement_time_msec / 1000), 2) as engagement_time_seconds,
+    min(datetime(timestamp_seconds(cast(a.user_first_touch_timestamp / 1000000 as int64)), '${constants.REPORTING_TIME_ZONE}')) as user_first_visit_datetime
+  from int_session a
+  group by
+    a.user_key,
+    a.ga_session_key,
+    a.ga_session_id,
+    a.user_pseudo_id,
+    a.session_traffic_source_last_click
+)
+
+select
+  *
+from final

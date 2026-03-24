@@ -1,0 +1,67 @@
+/**
+ * Copyright 2024 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+config {
+    type: "incremental",
+    schema: constants.INTERMEDIATE_DATASET,
+    description: "Intermediate model that updates staging events data.",
+    bigquery: {
+        partitionBy: "event_date",
+        clusterBy: ["user_key", "ga_session_key"]
+    }
+}
+
+pre_operations {
+  declare event_date_checkpoint default (
+    ${when(incremental(),
+      `select max(event_date) -3 from ${self()}`,
+      `select cast('${constants.START_DATE}' as date format 'yyyymmdd')`)
+    }
+  )
+  ---
+  ${when(incremental(),
+    `delete from ${self()} where event_date >= event_date_checkpoint`)
+  }
+}
+
+with staging as (
+    select
+        stg_events.* except(collected_traffic_source, event_datetime, session_traffic_source_last_click),
+        datetime(timestamp_seconds(cast(event_timestamp / 1000000 as int64)), '${constants.REPORTING_TIME_ZONE}') as event_datetime, --ga4 property reporting time zone
+        to_base64(md5(concat(user_pseudo_id, stream_id))) as user_key,
+        to_base64(md5(concat(user_pseudo_id, stream_id, ga_session_id))) as ga_session_key,
+        (
+        select
+        as struct
+            ${helpers.updatePaidTrafficSource('collected_traffic_source', 'manual_source', 'stg_events', null)} as source,
+            ${helpers.updatePaidTrafficSource('collected_traffic_source', 'manual_medium', 'stg_events', null)} as medium,
+            ${helpers.updatePaidTrafficSource('collected_traffic_source', 'manual_campaign_name', 'stg_events', when(constants.GADS_GET_DATA, 'int_ads_click_campaign.campaign_name', null))} as campaign,
+            collected_traffic_source.manual_campaign_id as manual_campaign_id,
+            collected_traffic_source.manual_campaign_name as manual_campaign_name,
+            collected_traffic_source.manual_source as manual_source,
+            collected_traffic_source.manual_medium as manual_medium,
+            collected_traffic_source.manual_content as manual_content,
+            collected_traffic_source.manual_term as manual_term,
+            collected_traffic_source.gclid,
+            collected_traffic_source.dclid
+        ) as collected_traffic_source,
+        session_traffic_source_last_click
+    from ${ref('stg_events')} as stg_events
+    ${when(constants.GADS_GET_DATA, `left join ${constants.INTERMEDIATE_DATASET}.int_ads_click_campaign as int_ads_click_campaign on stg_events.collected_traffic_source.gclid = int_ads_click_campaign.gclid`)}
+    where event_date >= event_date_checkpoint
+)
+select
+    *
+from staging
