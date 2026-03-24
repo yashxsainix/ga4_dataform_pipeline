@@ -1,3 +1,7 @@
+## Author
+
+**Yashpal Saini**
+
 # GA4 Dataform Analytics Pipeline
 
 A Dataform + BigQuery project that transforms raw Google Analytics 4 export tables into clean, analysis-ready data models for **event analysis, session reporting, attribution, and ecommerce tracking**.
@@ -298,12 +302,6 @@ This project is useful for:
 - teams using GA4 + BigQuery for performance reporting
 
 It is especially relevant for organizations that want a cleaner way to analyze digital performance without manually rewriting GA4 logic in every report.
-
-## Resume-ready project summary
-
-Here is a concise way to describe this project in a resume or portfolio:
-
-**Built a Dataform and BigQuery pipeline that transformed raw GA4 exports into session-, event-, and attribution-ready reporting models, improving the usability of marketing performance data for channel analysis, campaign reporting, and business decision-making.**
 
 ## Final takeaway
 
